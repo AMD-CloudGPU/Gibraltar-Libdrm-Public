@@ -733,6 +733,8 @@ struct drm_amdgpu_cs_chunk_data {
 #define AMDGPU_INFO_NUM_VRAM_CPU_PAGE_FAULTS	0x1E
 #define AMDGPU_INFO_VRAM_LOST_COUNTER		0x1F
 
+/* gpu capability */
+#define AMDGPU_INFO_CAPABILITY			0x50
 /* virtual range */
 #define AMDGPU_INFO_VIRTUAL_RANGE               0x51
 
@@ -1018,6 +1020,9 @@ struct drm_amdgpu_virtual_range {
 	uint64_t start;
 	uint64_t end;
 };
+
+/* query pin memory capability */
+#define AMDGPU_CAPABILITY_PIN_MEM_FLAG		(1 << 0)
 
 #if defined(__cplusplus)
 }

@@ -43,6 +43,7 @@ extern "C" {
 
 struct drm_amdgpu_info_hw_ip;
 struct drm_amdgpu_bo_list_entry;
+struct drm_amdgpu_capability;
 
 /*--------------------------------------------------------------------------*/
 /* --------------------------- Defines ------------------------------------ */
@@ -1165,6 +1166,20 @@ int amdgpu_query_gpu_info(amdgpu_device_handle dev,
 */
 int amdgpu_query_info(amdgpu_device_handle dev, unsigned info_id,
 		      unsigned size, void *value);
+
+/**
+ * Query hardware or driver capabilities.
+ *
+ *
+ * \param   dev     - \c [in] Device handle. See #amdgpu_device_initialize()
+ * \param   value   - \c [out] Pointer to the return value.
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX error code
+ *
+*/
+int amdgpu_query_capability(amdgpu_device_handle dev,
+			     struct drm_amdgpu_capability *cap);
 
 /**
  * Query hardware or driver information.
