@@ -262,7 +262,7 @@ drm_public int amdgpu_query_heap_info(amdgpu_device_handle dev,
 		else /* query total vram heap */
 			info->heap_size = vram_gtt_info.vram_size;
 
-		info->max_allocation = vram_gtt_info.vram_cpu_accessible_size;
+		info->max_allocation = vram_gtt_info.vram_size * 3 / 4;
 
 		if (flags & AMDGPU_GEM_CREATE_CPU_ACCESS_REQUIRED)
 			r = amdgpu_query_info(dev, AMDGPU_INFO_VIS_VRAM_USAGE,
@@ -277,7 +277,7 @@ drm_public int amdgpu_query_heap_info(amdgpu_device_handle dev,
 		break;
 	case AMDGPU_GEM_DOMAIN_GTT:
 		info->heap_size = vram_gtt_info.gtt_size;
-		info->max_allocation = vram_gtt_info.vram_cpu_accessible_size;
+		info->max_allocation = vram_gtt_info.gtt_size * 3 / 4;
 
 		r = amdgpu_query_info(dev, AMDGPU_INFO_GTT_USAGE,
 				      sizeof(info->heap_usage),
