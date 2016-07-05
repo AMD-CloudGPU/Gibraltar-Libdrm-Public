@@ -46,6 +46,7 @@ static void amdgpu_bo_map_unmap(void);
 static void amdgpu_memory_alloc(void);
 static void amdgpu_mem_fail_alloc(void);
 static void amdgpu_bo_find_by_cpu_mapping(void);
+static void amdgpu_get_fb_id_and_handle(void);
 
 CU_TestInfo bo_tests[] = {
 	{ "Export/Import",  amdgpu_bo_export_import },
@@ -54,6 +55,7 @@ CU_TestInfo bo_tests[] = {
 	{ "Memory alloc Test",  amdgpu_memory_alloc },
 	{ "Memory fail alloc Test",  amdgpu_mem_fail_alloc },
 	{ "Find bo by CPU mapping",  amdgpu_bo_find_by_cpu_mapping },
+	{ "GET FB_ID AND FB_HANDLE",  amdgpu_get_fb_id_and_handle },
 	CU_TEST_INFO_NULL,
 };
 
@@ -315,4 +317,22 @@ static void amdgpu_bo_find_by_cpu_mapping(void)
 	r = amdgpu_bo_unmap_and_free(bo_handle, va_handle,
 				     bo_mc_address, 4096);
 	CU_ASSERT_EQUAL(r, 0);
+}
+static void amdgpu_get_fb_id_and_handle(void)
+{
+	uint32_t *ptr;
+	int i, r;
+	unsigned int fb_id;
+	struct amdgpu_bo_import_result output;
+
+	r = amdgpu_get_fb_id(device_handle, &fb_id);
+	CU_ASSERT_EQUAL(r, 0);
+	if (fb_id == 0) {
+		fprintf(stderr, "\nSkipping amdgpu_get_fb_id_and_handle test: no monitor connected\n");
+		return;
+	}
+
+	r = amdgpu_get_bo_from_fb_id(device_handle, fb_id, &output);
+	CU_ASSERT_EQUAL(r, 0);
+	CU_ASSERT_NOT_EQUAL(output.buf_handle, 0);
 }
