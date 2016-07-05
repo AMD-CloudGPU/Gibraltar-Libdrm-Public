@@ -449,6 +449,105 @@ drm_public int amdgpu_get_fb_id(amdgpu_device_handle dev, unsigned int *fb_id)
 	return r;
 }
 
+/* Get the frame buffer's gem object handle by the fb_id. */
+drm_public int amdgpu_get_bo_from_fb_id(amdgpu_device_handle dev, unsigned int fb_id, struct amdgpu_bo_import_result *output)
+{
+	drmModeFBPtr fbcur;
+	struct drm_amdgpu_gem_create_in bo_info = {};
+	struct drm_amdgpu_gem_op gem_op = {};
+	int r = 0;
+	struct amdgpu_bo *bo = NULL;
+	int dma_fd;
+	int flag_auth = 0;
+	int fd = dev->fd;
+
+	amdgpu_get_auth(dev->fd, &flag_auth);
+	if (flag_auth) {
+		fd = dev->fd;
+	} else {
+		amdgpu_get_auth(dev->flink_fd, &flag_auth);
+		if (flag_auth) {
+			fd = dev->flink_fd;
+		} else {
+			fprintf(stderr, "amdgpu: amdgpu_get_bo_from_fb_id, couldn't get the auth fd\n");
+			return EINVAL;
+		}
+	}
+
+	fbcur = drmModeGetFB(fd, fb_id);
+
+	if (fbcur == NULL)
+		return EFAULT;
+
+	pthread_mutex_lock(&dev->bo_table_mutex);
+	if (fd != dev->fd) {
+		r = drmPrimeHandleToFD(fd, fbcur->handle, DRM_CLOEXEC, &dma_fd);
+		if (r) {
+			pthread_mutex_unlock(&dev->bo_table_mutex);
+			drmModeFreeFB(fbcur);
+			return r;
+		}
+		r = drmPrimeFDToHandle(dev->fd, dma_fd, &fbcur->handle );
+
+		close(dma_fd);
+
+		if (r) {
+			pthread_mutex_unlock(&dev->bo_table_mutex);
+			drmModeFreeFB(fbcur);
+			return r;
+		}
+	}
+	bo = handle_table_lookup(&dev->bo_handles, fbcur->handle);
+
+	if (bo) {
+		pthread_mutex_unlock(&dev->bo_table_mutex);
+
+		/* The buffer already exists, just bump the refcount. */
+		atomic_inc(&bo->refcount);
+
+		output->buf_handle = bo;
+		output->alloc_size = bo->alloc_size;
+		drmModeFreeFB(fbcur);
+		return 0;
+	}
+
+	bo = calloc(1, sizeof(struct amdgpu_bo));
+	if (!bo) {
+		pthread_mutex_unlock(&dev->bo_table_mutex);
+		drmModeFreeFB(fbcur);
+		return -ENOMEM;
+	}
+
+	/* Query buffer info. */
+	gem_op.handle = fbcur->handle;
+	gem_op.op = AMDGPU_GEM_OP_GET_GEM_CREATE_INFO;
+	gem_op.value = (uintptr_t)&bo_info;
+
+	r = drmCommandWriteRead(dev->fd, DRM_AMDGPU_GEM_OP,
+				&gem_op, sizeof(gem_op));
+	if (r) {
+		free(bo);
+		pthread_mutex_unlock(&dev->bo_table_mutex);
+		drmModeFreeFB(fbcur);
+		return r;
+	}
+
+	/* Initialize it. */
+	atomic_set(&bo->refcount, 1);
+	bo->handle = fbcur->handle;
+	bo->dev = dev;
+	bo->alloc_size = bo_info.bo_size;
+	output->buf_handle = bo;
+	pthread_mutex_init(&bo->cpu_access_mutex, NULL);
+
+	handle_table_insert(&dev->bo_handles, bo->handle, bo);
+	pthread_mutex_unlock(&dev->bo_table_mutex);
+
+	output->alloc_size = bo->alloc_size;
+	drmModeFreeFB(fbcur);
+	return r;
+}
+
 drm_public int amdgpu_bo_free(amdgpu_bo_handle buf_handle)
 {
 	struct amdgpu_device *dev;

@@ -89,6 +89,7 @@ amdgpu_va_range_query
 amdgpu_vm_reserve_vmid
 amdgpu_vm_unreserve_vmid
 amdgpu_get_fb_id
+amdgpu_get_bo_from_fb_id
 EOF
 done)
 

@@ -673,6 +673,23 @@ int amdgpu_bo_import(amdgpu_device_handle dev,
 int amdgpu_get_fb_id(amdgpu_device_handle dev, unsigned int *fb_id);
 
 /**
+ * Get the framebuffer's bo by fb_id
+ *
+ * \param   dev    - \c [in] Device handle.
+ *				    See #amdgpu_device_initialize()
+ * \param   fb_id  - \c [in] the framebuffer's buffer_id
+ *
+ * \param   output - \c [output] the bo of fb_id
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+ * \sa amdgpu_get_bo_from_fb_id()
+ *
+*/
+int amdgpu_get_bo_from_fb_id(amdgpu_device_handle dev, unsigned int fb_id, struct amdgpu_bo_import_result *output);
+
+/**
  * Request GPU access to user allocated memory e.g. via "malloc"
  *
  * \param dev - [in] Device handle. See #amdgpu_device_initialize()
