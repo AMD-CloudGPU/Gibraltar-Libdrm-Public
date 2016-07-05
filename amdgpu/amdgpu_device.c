@@ -77,7 +77,7 @@ static int fd_compare(int fd1, int fd2)
 *          >0 - AMD specific error code\n
 *          <0 - Negative POSIX Error code
 */
-static int amdgpu_get_auth(int fd, int *auth)
+int amdgpu_get_auth(int fd, int *auth)
 {
 	int r = 0;
 	drm_client_t client = {};
