@@ -57,6 +57,7 @@ extern "C" {
 
 /* hybrid specific ioctls */
 #define DRM_AMDGPU_SEM			0x5b
+#define DRM_AMDGPU_GEM_DGMA		0x5c
 
 #define DRM_IOCTL_AMDGPU_GEM_CREATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_GEM_CREATE, union drm_amdgpu_gem_create)
 #define DRM_IOCTL_AMDGPU_GEM_MMAP	DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_GEM_MMAP, union drm_amdgpu_gem_mmap)
@@ -76,6 +77,7 @@ extern "C" {
 #define DRM_IOCTL_AMDGPU_SCHED		DRM_IOW(DRM_COMMAND_BASE + DRM_AMDGPU_SCHED, union drm_amdgpu_sched)
 /* hybrid specific ioctls */
 #define DRM_IOCTL_AMDGPU_SEM		DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_SEM, union drm_amdgpu_sem)
+#define DRM_IOCTL_AMDGPU_GEM_DGMA	DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_GEM_DGMA, struct drm_amdgpu_gem_dgma)
 
 /**
  * DOC: memory domains
@@ -106,12 +108,14 @@ extern "C" {
 #define AMDGPU_GEM_DOMAIN_GDS		0x8
 #define AMDGPU_GEM_DOMAIN_GWS		0x10
 #define AMDGPU_GEM_DOMAIN_OA		0x20
+#define AMDGPU_GEM_DOMAIN_DGMA		0x40
 #define AMDGPU_GEM_DOMAIN_MASK		(AMDGPU_GEM_DOMAIN_CPU | \
 					 AMDGPU_GEM_DOMAIN_GTT | \
 					 AMDGPU_GEM_DOMAIN_VRAM | \
 					 AMDGPU_GEM_DOMAIN_GDS | \
 					 AMDGPU_GEM_DOMAIN_GWS | \
-					 AMDGPU_GEM_DOMAIN_OA)
+					 AMDGPU_GEM_DOMAIN_OA | \
+					 AMDGPU_GEM_DOMAIN_DGMA)
 
 /* Flag that CPU access will be required for the case of VRAM domain */
 #define AMDGPU_GEM_CREATE_CPU_ACCESS_REQUIRED	(1 << 0)
@@ -342,6 +346,15 @@ struct drm_amdgpu_gem_userptr {
 	__u32		flags;
 	/* Resulting GEM handle */
 	__u32		handle;
+};
+
+#define AMDGPU_GEM_DGMA_IMPORT			0
+#define AMDGPU_GEM_DGMA_QUERY_PHYS_ADDR	1
+struct drm_amdgpu_gem_dgma {
+	uint64_t		addr;
+	uint64_t		size;
+	uint32_t		op;
+	uint32_t		handle;
 };
 
 /* SI-CI-VI: */
@@ -1057,6 +1070,14 @@ struct drm_amdgpu_virtual_range {
 
 /* query pin memory capability */
 #define AMDGPU_CAPABILITY_PIN_MEM_FLAG		(1 << 0)
+/* query direct gma capability */
+#define AMDGPU_CAPABILITY_DIRECT_GMA_FLAG	(1 << 1)
+
+struct drm_amdgpu_capability {
+	uint32_t flag;
+	uint32_t direct_gma_size;
+};
+
 
 #if defined(__cplusplus)
 }

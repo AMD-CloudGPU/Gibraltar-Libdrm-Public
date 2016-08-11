@@ -748,6 +748,50 @@ int amdgpu_find_bo_by_cpu_mapping(amdgpu_device_handle dev,
 				  uint64_t *offset_in_bo);
 
 /**
+ * Request GPU access to physical memory from 3rd party device.
+ *
+ * \param dev - [in] Device handle. See #amdgpu_device_initialize()
+ * \param phys_address - [in] Physical address from 3rd party device which
+ * we want to map to GPU address space (make GPU accessible)
+ * (This address must be correctly aligned).
+ * \param size - [in] Size of allocation (must be correctly aligned)
+ * \param buf_handle - [out] Buffer handle for the userptr memory
+ * resource on submission and be used in other operations.
+ *
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+ * \note
+ * This call should guarantee that such memory will be persistently
+ * "locked" / make non-pageable. The purpose of this call is to provide
+ * opportunity for GPU get access to this resource during submission.
+ *
+ *
+ * Supported (theoretical) max. size of mapping is restricted only by
+ * capability.direct_gma_size. See #amdgpu_query_capability()
+ *
+ * It is responsibility of caller to correctly specify physical_address
+*/
+int amdgpu_create_bo_from_phys_mem(amdgpu_device_handle dev,
+				uint64_t phys_address, uint64_t size,
+				amdgpu_bo_handle *buf_handle);
+
+/**
+ * Get physical address from BO
+ *
+ * \param buf_handle - [in] Buffer handle for the physical address.
+ * \param phys_address - [out] Physical address of this BO.
+ *
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+*/
+int amdgpu_bo_get_phys_address(amdgpu_bo_handle buf_handle,
+					uint64_t *phys_address);
+
+/**
  * Free previosuly allocated memory
  *
  * \param   dev	       - \c [in] Device handle. See #amdgpu_device_initialize()

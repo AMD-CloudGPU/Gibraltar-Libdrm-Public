@@ -548,6 +548,58 @@ drm_public int amdgpu_get_bo_from_fb_id(amdgpu_device_handle dev, unsigned int f
 	return r;
 }
 
+drm_public int amdgpu_create_bo_from_phys_mem(amdgpu_device_handle dev,
+				uint64_t phys_address, uint64_t size,
+				amdgpu_bo_handle *buf_handle)
+{
+	struct drm_amdgpu_gem_dgma args;
+	amdgpu_bo_handle bo;
+	int r;
+
+	if (phys_address == 0 || phys_address & 4095 ||
+		size == 0 || size & 4095)
+		return -EINVAL;
+
+	args.addr = phys_address;
+	args.size = size;
+	args.op = AMDGPU_GEM_DGMA_IMPORT;
+	r = drmCommandWriteRead(dev->fd, DRM_AMDGPU_GEM_DGMA,
+				&args, sizeof(args));
+	if (r)
+		return r;
+
+	bo = calloc(1, sizeof(struct amdgpu_bo));
+	if (!bo)
+		return -ENOMEM;
+
+	atomic_set(&bo->refcount, 1);
+	pthread_mutex_init(&bo->cpu_access_mutex, NULL);
+	bo->dev = dev;
+	bo->alloc_size = size;
+	bo->handle = args.handle;
+
+	*buf_handle = bo;
+
+	return 0;
+}
+
+drm_public int amdgpu_bo_get_phys_address(amdgpu_bo_handle buf_handle,
+					uint64_t *phys_address)
+{
+	struct drm_amdgpu_gem_dgma args;
+	int r;
+
+	args.op = AMDGPU_GEM_DGMA_QUERY_PHYS_ADDR;
+	args.handle = buf_handle->handle;
+	r = drmCommandWriteRead(buf_handle->dev->fd, DRM_AMDGPU_GEM_DGMA,
+				&args, sizeof(args));
+	if (r)
+		return r;
+
+	*phys_address = args.addr;
+	return 0;
+}
+
 drm_public int amdgpu_bo_free(amdgpu_bo_handle buf_handle)
 {
 	struct amdgpu_device *dev;
