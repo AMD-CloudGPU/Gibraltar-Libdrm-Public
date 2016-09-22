@@ -144,6 +144,12 @@ typedef struct amdgpu_va *amdgpu_va_handle;
  */
 typedef struct amdgpu_semaphore *amdgpu_semaphore_handle;
 
+/**
+ * Define handle for sem file
+ */
+typedef uint32_t amdgpu_sem_handle;
+
+
 /*--------------------------------------------------------------------------*/
 /* -------------------------- Structures ---------------------------------- */
 /*--------------------------------------------------------------------------*/
@@ -1474,6 +1480,74 @@ int amdgpu_cs_wait_semaphore(amdgpu_context_handle ctx,
  *
 */
 int amdgpu_cs_destroy_semaphore(amdgpu_semaphore_handle sem);
+
+/**
+ *  create sem
+ *
+ * \param   dev    - [in] Device handle. See #amdgpu_device_initialize()
+ * \param   sem	   - \c [out] sem handle
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+*/
+int amdgpu_cs_create_sem(amdgpu_device_handle dev,
+			 amdgpu_sem_handle *sem);
+
+/**
+ *  signal sem
+ *
+ * \param   dev    - [in] Device handle. See #amdgpu_device_initialize()
+ * \param   context        - \c [in] GPU Context
+ * \param   ip_type        - \c [in] Hardware IP block type = AMDGPU_HW_IP_*
+ * \param   ip_instance    - \c [in] Index of the IP block of the same type
+ * \param   ring           - \c [in] Specify ring index of the IP
+ * \param   sem	   - \c [out] sem handle
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+ */
+int amdgpu_cs_signal_sem(amdgpu_device_handle dev,
+			 amdgpu_context_handle ctx,
+			 uint32_t ip_type,
+			 uint32_t ip_instance,
+			 uint32_t ring,
+			 amdgpu_sem_handle sem);
+
+/**
+ *  wait sem
+ *
+ * \param   dev    - [in] Device handle. See #amdgpu_device_initialize()
+ * \param   context        - \c [in] GPU Context
+ * \param   ip_type        - \c [in] Hardware IP block type = AMDGPU_HW_IP_*
+ * \param   ip_instance    - \c [in] Index of the IP block of the same type
+ * \param   ring           - \c [in] Specify ring index of the IP
+ * \param   sem	   - \c [out] sem handle
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+*/
+int amdgpu_cs_wait_sem(amdgpu_device_handle dev,
+		       amdgpu_context_handle ctx,
+		       uint32_t ip_type,
+		       uint32_t ip_instance,
+		       uint32_t ring,
+		       amdgpu_sem_handle sem);
+
+/**
+ *  destroy sem
+ *
+ * \param   dev    - [in] Device handle. See #amdgpu_device_initialize()
+ * \param   sem	   - \c [out] sem handle
+ *
+ * \return   0 on success\n
+ *          <0 - Negative POSIX Error code
+ *
+ */
+int amdgpu_cs_destroy_sem(amdgpu_device_handle dev,
+			  amdgpu_sem_handle sem);
 
 /**
  *  reserve vmid for this process

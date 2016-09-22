@@ -55,6 +55,9 @@ extern "C" {
 #define DRM_AMDGPU_FENCE_TO_HANDLE	0x14
 #define DRM_AMDGPU_SCHED		0x15
 
+/* hybrid specific ioctls */
+#define DRM_AMDGPU_SEM			0x5b
+
 #define DRM_IOCTL_AMDGPU_GEM_CREATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_GEM_CREATE, union drm_amdgpu_gem_create)
 #define DRM_IOCTL_AMDGPU_GEM_MMAP	DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_GEM_MMAP, union drm_amdgpu_gem_mmap)
 #define DRM_IOCTL_AMDGPU_CTX		DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_CTX, union drm_amdgpu_ctx)
@@ -71,6 +74,8 @@ extern "C" {
 #define DRM_IOCTL_AMDGPU_VM		DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_VM, union drm_amdgpu_vm)
 #define DRM_IOCTL_AMDGPU_FENCE_TO_HANDLE DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_FENCE_TO_HANDLE, union drm_amdgpu_fence_to_handle)
 #define DRM_IOCTL_AMDGPU_SCHED		DRM_IOW(DRM_COMMAND_BASE + DRM_AMDGPU_SCHED, union drm_amdgpu_sched)
+/* hybrid specific ioctls */
+#define DRM_IOCTL_AMDGPU_SEM		DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_SEM, union drm_amdgpu_sem)
 
 /**
  * DOC: memory domains
@@ -254,6 +259,33 @@ union drm_amdgpu_ctx_out {
 union drm_amdgpu_ctx {
 	struct drm_amdgpu_ctx_in in;
 	union drm_amdgpu_ctx_out out;
+};
+
+/* sem related */
+#define AMDGPU_SEM_OP_CREATE_SEM       1
+#define AMDGPU_SEM_OP_WAIT_SEM         2
+#define AMDGPU_SEM_OP_SIGNAL_SEM       3
+#define AMDGPU_SEM_OP_DESTROY_SEM      4
+
+struct drm_amdgpu_sem_in {
+	/** AMDGPU_SEM_OP_* */
+	uint32_t        op;
+	uint32_t        handle;
+	uint32_t        ctx_id;
+	uint32_t        ip_type;
+	uint32_t        ip_instance;
+	uint32_t        ring;
+	uint64_t        seq;
+};
+
+union drm_amdgpu_sem_out {
+	int            fd;
+	uint32_t        handle;
+};
+
+union drm_amdgpu_sem {
+	struct drm_amdgpu_sem_in in;
+	union drm_amdgpu_sem_out out;
 };
 
 /* vm ioctl */
