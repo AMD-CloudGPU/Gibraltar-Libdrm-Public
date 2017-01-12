@@ -1536,6 +1536,14 @@ int amdgpu_cs_wait_sem(amdgpu_device_handle dev,
 		       uint32_t ring,
 		       amdgpu_sem_handle sem);
 
+int amdgpu_cs_export_sem(amdgpu_device_handle dev,
+			  amdgpu_sem_handle sem,
+			  int *shared_handle);
+
+int amdgpu_cs_import_sem(amdgpu_device_handle dev,
+			  int shared_handle,
+			  amdgpu_sem_handle *sem);
+
 /**
  *  destroy sem
  *

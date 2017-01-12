@@ -864,6 +864,49 @@ drm_public int amdgpu_cs_wait_sem(amdgpu_device_handle dev,
 	return drmCommandWriteRead(dev->fd, DRM_AMDGPU_SEM, &args, sizeof(args));
 }
 
+drm_public int amdgpu_cs_export_sem(amdgpu_device_handle dev,
+			  amdgpu_sem_handle sem,
+			  int *shared_handle)
+{
+	union drm_amdgpu_sem args;
+	int r;
+
+	if (NULL == dev)
+		return -EINVAL;
+
+	/* Create the context */
+	memset(&args, 0, sizeof(args));
+	args.in.op = AMDGPU_SEM_OP_EXPORT_SEM;
+	args.in.handle = sem;
+	r = drmCommandWriteRead(dev->fd, DRM_AMDGPU_SEM, &args, sizeof(args));
+	if (r)
+		return r;
+	*shared_handle = args.out.fd;
+	return 0;
+}
+
+drm_public int amdgpu_cs_import_sem(amdgpu_device_handle dev,
+			  int shared_handle,
+			  amdgpu_sem_handle *sem)
+{
+	union drm_amdgpu_sem args;
+	int r;
+
+	if (NULL == dev)
+		return -EINVAL;
+
+	/* Create the context */
+	memset(&args, 0, sizeof(args));
+	args.in.op = AMDGPU_SEM_OP_IMPORT_SEM;
+	args.in.handle = shared_handle;
+	r = drmCommandWriteRead(dev->fd, DRM_AMDGPU_SEM, &args, sizeof(args));
+	if (r)
+		return r;
+	*sem = args.out.handle;
+	return 0;
+}
+
+
 drm_public int amdgpu_cs_destroy_sem(amdgpu_device_handle dev,
 			  amdgpu_sem_handle sem)
 {

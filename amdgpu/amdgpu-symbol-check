@@ -60,6 +60,8 @@ amdgpu_cs_wait_semaphore
 amdgpu_cs_create_sem
 amdgpu_cs_signal_sem
 amdgpu_cs_wait_sem
+amdgpu_cs_export_sem
+amdgpu_cs_import_sem
 amdgpu_cs_destroy_sem
 amdgpu_cs_unreserved_vmid
 amdgpu_cs_reserved_vmid
