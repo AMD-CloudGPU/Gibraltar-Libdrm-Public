@@ -760,6 +760,8 @@ static void amdgpu_semaphore_test(void)
 	uint32_t sdma_nop, gfx_nop;
 	amdgpu_bo_list_handle bo_list[2];
 	amdgpu_va_handle va_handle[2];
+	amdgpu_sem_handle sem_handle, sem_handle_import;
+	int fd;
 	int r, i;
 
 	if (family_id == AMDGPU_FAMILY_SI) {
@@ -868,6 +870,63 @@ static void amdgpu_semaphore_test(void)
 					 500000000, 0, &expired);
 	CU_ASSERT_EQUAL(r, 0);
 	CU_ASSERT_EQUAL(expired, true);
+
+	/* 3. export/import sem test */
+	r = amdgpu_cs_create_sem(device_handle, &sem_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	ptr = ib_result_cpu[0];
+	ptr[0] = SDMA_NOP;
+	ib_info[0].ib_mc_address = ib_result_mc_address[0];
+	ib_info[0].size = 1;
+
+	ibs_request[0].ip_type = AMDGPU_HW_IP_DMA;
+	ibs_request[0].number_of_ibs = 1;
+	ibs_request[0].ibs = &ib_info[0];
+	ibs_request[0].resources = bo_list[0];
+	ibs_request[0].fence_info.handle = NULL;
+	r = amdgpu_cs_submit(context_handle[0], 0,&ibs_request[0], 1);
+	CU_ASSERT_EQUAL(r, 0);
+	r = amdgpu_cs_signal_sem(device_handle, context_handle[0], AMDGPU_HW_IP_DMA, 0, 0, sem_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	// export the semaphore and import in different context to wait.
+	r = amdgpu_cs_export_sem(device_handle, sem_handle, &fd);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_cs_import_sem(device_handle, fd, &sem_handle_import);
+	CU_ASSERT_EQUAL(r, 0);
+	close(fd);
+	r = amdgpu_cs_destroy_sem(device_handle, sem_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_cs_wait_sem(device_handle, context_handle[1], AMDGPU_HW_IP_GFX, 0, 0, sem_handle_import);
+	CU_ASSERT_EQUAL(r, 0);
+	ptr = ib_result_cpu[1];
+	ptr[0] = GFX_COMPUTE_NOP;
+	ib_info[1].ib_mc_address = ib_result_mc_address[1];
+	ib_info[1].size = 1;
+
+	ibs_request[1].ip_type = AMDGPU_HW_IP_GFX;
+	ibs_request[1].number_of_ibs = 1;
+	ibs_request[1].ibs = &ib_info[1];
+	ibs_request[1].resources = bo_list[1];
+	ibs_request[1].fence_info.handle = NULL;
+
+	r = amdgpu_cs_submit(context_handle[1], 0,&ibs_request[1], 1);
+	CU_ASSERT_EQUAL(r, 0);
+
+	fence_status.context = context_handle[1];
+	fence_status.ip_type = AMDGPU_HW_IP_GFX;
+	fence_status.ip_instance = 0;
+	fence_status.fence = ibs_request[1].seq_no;
+	r = amdgpu_cs_query_fence_status(&fence_status,
+					 500000000, 0, &expired);
+	CU_ASSERT_EQUAL(r, 0);
+	CU_ASSERT_EQUAL(expired, true);
+
+	r = amdgpu_cs_destroy_sem(device_handle, sem_handle_import);
+	CU_ASSERT_EQUAL(r, 0);
 
 	for (i = 0; i < 2; i++) {
 		r = amdgpu_bo_unmap_and_free(ib_result_handle[i], va_handle[i],
