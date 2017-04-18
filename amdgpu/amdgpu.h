@@ -189,11 +189,18 @@ struct amdgpu_bo_metadata {
 	/** Special flag associated with surface */
 	uint64_t flags;
 
-	/**
-	 * ASIC-specific tiling information (also used by DCE).
-	 * The encoding is defined by the AMDGPU_TILING_* definitions.
-	 */
-	uint64_t tiling_info;
+	union {
+		/**
+		 * ASIC-specific tiling information (also used by DCE).
+		 * The encoding is defined by the AMDGPU_TILING_* definitions.
+		 */
+		uint64_t tiling_info;
+		/**
+		 * ASIC-specific swizzle information.
+		 * The encoding is defined by the AMDGPU_SWIZZLE_* definitions.
+		 */
+		uint64_t swizzle_info;
+	};
 
 	/** Size of metadata associated with the buffer, in bytes. */
 	uint32_t size_metadata;
