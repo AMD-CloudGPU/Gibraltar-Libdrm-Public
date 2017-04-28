@@ -57,6 +57,8 @@ amdgpu_cs_syncobj_signal
 amdgpu_cs_syncobj_wait
 amdgpu_cs_wait_fences
 amdgpu_cs_wait_semaphore
+amdgpu_cs_unreserved_vmid
+amdgpu_cs_reserved_vmid
 amdgpu_device_deinitialize
 amdgpu_device_initialize
 amdgpu_find_bo_by_cpu_mapping

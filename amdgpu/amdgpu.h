@@ -1476,6 +1476,20 @@ int amdgpu_cs_wait_semaphore(amdgpu_context_handle ctx,
 int amdgpu_cs_destroy_semaphore(amdgpu_semaphore_handle sem);
 
 /**
+ *  reserve vmid for this process
+ *
+ * \param   dev    - [in] Device handle. See #amdgpu_device_initialize()
+ */
+int amdgpu_cs_reserved_vmid(amdgpu_device_handle dev);
+
+/**
+ *  unreserve vmid for this process
+ *
+ * \param   dev    - [in] Device handle. See #amdgpu_device_initialize()
+ */
+int amdgpu_cs_unreserved_vmid(amdgpu_device_handle dev);
+
+/**
  *  Get the ASIC marketing name
  *
  * \param   dev         - \c [in] Device handle. See #amdgpu_device_initialize()
