@@ -22,6 +22,10 @@
 */
 
 #include <stdio.h>
+#include <inttypes.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <time.h>
 
 #include "CUnit/Basic.h"
 
@@ -47,6 +51,7 @@ static void amdgpu_memory_alloc(void);
 static void amdgpu_mem_fail_alloc(void);
 static void amdgpu_bo_find_by_cpu_mapping(void);
 static void amdgpu_get_fb_id_and_handle(void);
+static void amdgpu_bo_ssg(void);
 
 CU_TestInfo bo_tests[] = {
 	{ "Export/Import",  amdgpu_bo_export_import },
@@ -56,6 +61,7 @@ CU_TestInfo bo_tests[] = {
 	{ "Memory fail alloc Test",  amdgpu_mem_fail_alloc },
 	{ "Find bo by CPU mapping",  amdgpu_bo_find_by_cpu_mapping },
 	{ "GET FB_ID AND FB_HANDLE",  amdgpu_get_fb_id_and_handle },
+	{ "SSG", amdgpu_bo_ssg },
 	CU_TEST_INFO_NULL,
 };
 
@@ -335,4 +341,106 @@ static void amdgpu_get_fb_id_and_handle(void)
 	r = amdgpu_get_bo_from_fb_id(device_handle, fb_id, &output);
 	CU_ASSERT_EQUAL(r, 0);
 	CU_ASSERT_NOT_EQUAL(output.buf_handle, 0);
+}
+
+static void amdgpu_bo_ssg(void)
+{
+	struct drm_amdgpu_capability cap;
+	amdgpu_bo_handle buf_handle;
+	size_t buf_size = 0x2000000;
+	struct amdgpu_bo_alloc_request req = {0};
+	char *in_file = "/tmp/ssg-in", *out_file = "/tmp/ssg-out";
+	int i, j, fd;
+	uint64_t pattern = 0xdeadbeef12345678, out;
+	void *buf;
+	bool write_is_ok;
+
+	CU_ASSERT(!amdgpu_query_capability(device_handle, &cap));
+	if(!(cap.flag & AMDGPU_CAPABILITY_SSG_FLAG)) {
+		printf("ignore SSG test due to kernel SSG is disabled\n");
+		return;
+	}
+
+	if (buf_size > cap.direct_gma_size << 20)
+		buf_size = cap.direct_gma_size << 20;
+
+	printf("SSG read/write block size 0x%x\n", buf_size);
+
+	CU_ASSERT((fd = open(in_file, O_WRONLY | O_CREAT, S_IRWXU)) >= 0);
+	for (i = 0; i < buf_size; i += sizeof(pattern)) {
+		write_is_ok = write(fd, &pattern, sizeof(pattern)) == sizeof(pattern);
+		if (!write_is_ok)
+			break;
+	}
+	CU_ASSERT(write_is_ok);
+	fsync(fd);
+	close(fd);
+
+	CU_ASSERT((fd = open(in_file, O_RDONLY | O_DIRECT)) >= 0);
+
+	req.alloc_size = buf_size;
+	req.preferred_heap = AMDGPU_GEM_DOMAIN_DGMA;
+	CU_ASSERT(!amdgpu_bo_alloc(device_handle, &req, &buf_handle));
+
+	CU_ASSERT(!amdgpu_bo_cpu_map(buf_handle, &buf));
+	for (i = 0; i < 3; i++)  {
+		struct timespec ts1, ts2;
+		double a, b, c;
+		bool read_is_same;
+
+		memset(buf, 0, buf_size);
+
+		CU_ASSERT(!clock_gettime(CLOCK_MONOTONIC, &ts1));
+		CU_ASSERT(read(fd, buf, buf_size) == buf_size);
+		CU_ASSERT(!clock_gettime(CLOCK_MONOTONIC, &ts2));
+
+		a = ts2.tv_sec - ts1.tv_sec;
+		b = ts2.tv_nsec - ts1.tv_nsec;
+		c = (buf_size >> 20) / (a + b / 1000000000.0);
+		printf("\tSSG read speed = %f MB/s\n", c);
+
+		for (j = 0; j < buf_size; j += sizeof(pattern)) {
+			read_is_same = *(uint64_t *)(buf + j) == pattern;
+			if (!read_is_same)
+				break;
+		}
+		CU_ASSERT(read_is_same);
+
+		lseek(fd, 0, SEEK_SET);
+	}
+	close(fd);
+	remove(in_file);
+
+	for (i = 0; i < 3; i++) {
+		struct timespec ts1, ts2;
+		double a, b, c;
+		bool write_is_same;
+
+		CU_ASSERT((fd = open(out_file, O_WRONLY | O_CREAT | O_DIRECT, S_IRWXU)) >= 0);
+
+		CU_ASSERT(!clock_gettime(CLOCK_MONOTONIC, &ts1));
+		CU_ASSERT(write(fd, buf, buf_size) == buf_size);
+		CU_ASSERT(!clock_gettime(CLOCK_MONOTONIC, &ts2));
+
+		a = ts2.tv_sec - ts1.tv_sec;
+		b = ts2.tv_nsec - ts1.tv_nsec;
+		c = (buf_size >> 20) / (a + b / 1000000000.0);
+		printf("\tSSG write speed = %f MB/s\n", c);
+
+		fsync(fd);
+		close(fd);
+		CU_ASSERT((fd = open(out_file, O_RDONLY)) >= 0);
+		for (j = 0; j < buf_size; j += sizeof(pattern)) {
+			write_is_same =
+				read(fd, &out, sizeof(out)) == sizeof(out) &&
+				out == pattern;
+			if (!write_is_same)
+				break;
+		}
+		CU_ASSERT(write_is_same);
+		close(fd);
+		remove(out_file);
+	}
+
+	amdgpu_bo_free(buf_handle);
 }
