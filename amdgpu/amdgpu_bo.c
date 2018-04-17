@@ -249,8 +249,7 @@ drm_public int amdgpu_bo_export(amdgpu_bo_handle bo,
 		return 0;
 
 	case amdgpu_bo_handle_type_dma_buf_fd:
-		return drmPrimeHandleToFD(bo->dev->fd, bo->handle,
-					  DRM_CLOEXEC | DRM_RDWR,
+		return drmPrimeHandleToFD(bo->dev->fd, bo->handle, DRM_CLOEXEC,
 					  (int*)shared_handle);
 	}
 	return -EINVAL;
