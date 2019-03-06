@@ -427,6 +427,10 @@ static void amdgpu_disable_suites()
 		fprintf(stderr, "test deactivation failed - %s\n", CU_get_error_msg());
 
 	if (amdgpu_set_test_active(DEADLOCK_TESTS_STR,
+			"sdma ring block test (set amdgpu.lockup_timeout=50)", CU_FALSE))
+		fprintf(stderr, "test deactivation failed - %s\n", CU_get_error_msg());
+
+	if (amdgpu_set_test_active(DEADLOCK_TESTS_STR,
 			"illegal reg access test", CU_FALSE))
 		fprintf(stderr, "test deactivation failed - %s\n", CU_get_error_msg());
 
