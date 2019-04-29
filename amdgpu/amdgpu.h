@@ -792,7 +792,7 @@ int amdgpu_bo_get_phys_address(amdgpu_bo_handle buf_handle,
 					uint64_t *phys_address);
 
 /**
- * Free previosuly allocated memory
+ * Free previously allocated memory
  *
  * \param   dev	       - \c [in] Device handle. See #amdgpu_device_initialize()
  * \param   buf_handle - \c [in]  Buffer handle to free
@@ -822,7 +822,7 @@ int amdgpu_bo_free(amdgpu_bo_handle buf_handle);
 void amdgpu_bo_inc_ref(amdgpu_bo_handle bo);
 
 /**
- * Request CPU access to GPU accessable memory
+ * Request CPU access to GPU accessible memory
  *
  * \param   buf_handle - \c [in] Buffer handle
  * \param   cpu        - \c [out] CPU address to be used for access
@@ -1000,6 +1000,21 @@ int amdgpu_cs_ctx_create(amdgpu_device_handle dev,
  *
 */
 int amdgpu_cs_ctx_free(amdgpu_context_handle context);
+
+/**
+ * Override the submission priority for the given context using a master fd.
+ *
+ * \param   dev        - \c [in] device handle
+ * \param   context    - \c [in] context handle for context id
+ * \param   master_fd  - \c [in] The master fd to authorize the override.
+ * \param   priority   - \c [in] The priority to assign to the context.
+ *
+ * \return 0 on success or a a negative Posix error code on failure.
+ */
+int amdgpu_cs_ctx_override_priority(amdgpu_device_handle dev,
+                                    amdgpu_context_handle context,
+                                    int master_fd,
+                                    unsigned priority);
 
 /**
  * Query reset state for the specific GPU Context
@@ -1397,7 +1412,7 @@ int amdgpu_read_mm_registers(amdgpu_device_handle dev, unsigned dword_offset,
  * \notes \n
  * It is client responsibility to correctly handle VA assignments and usage.
  * Neither kernel driver nor libdrm_amdpgu are able to prevent and
- * detect wrong va assignemnt.
+ * detect wrong va assignment.
  *
  * It is client responsibility to correctly handle multi-GPU cases and to pass
  * the corresponding arrays of all devices handles where corresponding VA will

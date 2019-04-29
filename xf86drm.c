@@ -179,7 +179,7 @@ drm_public void drmFree(void *pt)
 }
 
 /**
- * Call ioctl, restarting if it is interupted
+ * Call ioctl, restarting if it is interrupted
  */
 drm_public int
 drmIoctl(int fd, unsigned long request, void *arg)
@@ -289,7 +289,7 @@ static int drmMatchBusID(const char *id1, const char *id2, int pci_domain_ok)
  *
  * \internal
  * Checks for failure. If failure was caused by signal call chown again.
- * If any other failure happened then it will output error mesage using
+ * If any other failure happened then it will output error message using
  * drmMsg() call.
  */
 #if !UDEV
@@ -586,31 +586,8 @@ static int drmOpenByBusid(const char *busid, int type)
     if (base < 0)
         return -1;
 
-    /* We need to try for 1.4 first for proper PCI domain support */
     drmMsg("drmOpenByBusid: Searching for BusID %s\n", busid);
     for (i = base; i < base + DRM_MAX_MINOR; i++) {
-        fd = drmOpenMinor(i, 1, type);
-        drmMsg("drmOpenByBusid: drmOpenMinor returns %d\n", fd);
-        if (fd >= 0) {
-            sv.drm_di_major = 1;
-            sv.drm_di_minor = 4;
-            sv.drm_dd_major = -1;        /* Don't care */
-            sv.drm_dd_minor = -1;        /* Don't care */
-            if (!drmSetInterfaceVersion(fd, &sv)) {
-                buf = drmGetBusid(fd);
-                drmMsg("drmOpenByBusid: drmGetBusid reports %s\n", buf);
-                if (buf && drmMatchBusID(buf, busid, 1)) {
-                    drmFreeBusid(buf);
-                    return fd;
-                }
-                if (buf)
-                    drmFreeBusid(buf);
-            }
-            close(fd);
-        }
-    }
-
-   for (i = base; i < base + DRM_MAX_MINOR; i++) {
         fd = drmOpenMinor(i, 1, type);
         drmMsg("drmOpenByBusid: drmOpenMinor returns %d\n", fd);
         if (fd >= 0) {
@@ -1481,7 +1458,7 @@ drm_public int drmDMA(int fd, drmDMAReqPtr request)
  *
  * \param fd file descriptor.
  * \param context context.
- * \param flags flags that determine the sate of the hardware when the function
+ * \param flags flags that determine the state of the hardware when the function
  * returns.
  *
  * \return always zero.
