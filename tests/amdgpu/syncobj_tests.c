@@ -36,7 +36,7 @@ static void amdgpu_syncobj_timeline_test(void);
 
 CU_BOOL suite_syncobj_timeline_tests_enable(void)
 {
-	return CU_TRUE;
+	return CU_FALSE;
 }
 
 int suite_syncobj_timeline_tests_init(void)
