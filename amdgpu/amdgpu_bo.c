@@ -816,6 +816,40 @@ out:
 	return r;
 }
 
+drm_public int amdgpu_create_bo_from_user_devmem(amdgpu_device_handle dev,
+					void *cpu,
+					uint64_t size,
+					amdgpu_bo_handle *buf_handle)
+{
+	int r;
+	struct drm_amdgpu_gem_userptr args;
+
+	args.addr = (uintptr_t)cpu;
+	args.flags = AMDGPU_GEM_USERPTR_PEERMEM;
+	args.size = size;
+	r = drmCommandWriteRead(dev->fd, DRM_AMDGPU_GEM_USERPTR,
+				&args, sizeof(args));
+
+	if (r)
+		goto out;
+
+	r = amdgpu_bo_create(dev, size, args.handle, buf_handle);
+	if (r) {
+		amdgpu_close_kms_handle(dev, args.handle);
+		goto out;
+	}
+
+	pthread_mutex_lock(&dev->bo_table_mutex);
+	r = handle_table_insert(&dev->bo_handles, (*buf_handle)->handle,
+				*buf_handle);
+	pthread_mutex_unlock(&dev->bo_table_mutex);
+	if (r)
+		amdgpu_bo_free(*buf_handle);
+
+out:
+	return r;
+}
+
 drm_public int amdgpu_bo_list_create_raw(amdgpu_device_handle dev,
 					 uint32_t number_of_buffers,
 					 struct drm_amdgpu_bo_list_entry *buffers,

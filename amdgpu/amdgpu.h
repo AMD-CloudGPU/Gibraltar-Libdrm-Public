@@ -724,6 +724,10 @@ int amdgpu_create_bo_from_user_mem(amdgpu_device_handle dev,
 				    void *cpu, uint64_t size,
 				    amdgpu_bo_handle *buf_handle);
 
+int amdgpu_create_bo_from_user_devmem(amdgpu_device_handle dev,
+					void *cpu, uint64_t size,
+					amdgpu_bo_handle *buf_handle);
+
 /**
  * Validate if the user memory comes from BO
  *
