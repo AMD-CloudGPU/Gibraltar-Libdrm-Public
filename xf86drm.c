@@ -179,7 +179,7 @@ drm_public void drmFree(void *pt)
 }
 
 /**
- * Call ioctl, restarting if it is interupted
+ * Call ioctl, restarting if it is interrupted
  */
 drm_public int
 drmIoctl(int fd, unsigned long request, void *arg)
@@ -289,7 +289,7 @@ static int drmMatchBusID(const char *id1, const char *id2, int pci_domain_ok)
  *
  * \internal
  * Checks for failure. If failure was caused by signal call chown again.
- * If any other failure happened then it will output error mesage using
+ * If any other failure happened then it will output error message using
  * drmMsg() call.
  */
 #if !UDEV
@@ -586,31 +586,8 @@ static int drmOpenByBusid(const char *busid, int type)
     if (base < 0)
         return -1;
 
-    /* We need to try for 1.4 first for proper PCI domain support */
     drmMsg("drmOpenByBusid: Searching for BusID %s\n", busid);
     for (i = base; i < base + DRM_MAX_MINOR; i++) {
-        fd = drmOpenMinor(i, 1, type);
-        drmMsg("drmOpenByBusid: drmOpenMinor returns %d\n", fd);
-        if (fd >= 0) {
-            sv.drm_di_major = 1;
-            sv.drm_di_minor = 4;
-            sv.drm_dd_major = -1;        /* Don't care */
-            sv.drm_dd_minor = -1;        /* Don't care */
-            if (!drmSetInterfaceVersion(fd, &sv)) {
-                buf = drmGetBusid(fd);
-                drmMsg("drmOpenByBusid: drmGetBusid reports %s\n", buf);
-                if (buf && drmMatchBusID(buf, busid, 1)) {
-                    drmFreeBusid(buf);
-                    return fd;
-                }
-                if (buf)
-                    drmFreeBusid(buf);
-            }
-            close(fd);
-        }
-    }
-
-   for (i = base; i < base + DRM_MAX_MINOR; i++) {
         fd = drmOpenMinor(i, 1, type);
         drmMsg("drmOpenByBusid: drmOpenMinor returns %d\n", fd);
         if (fd >= 0) {
@@ -773,8 +750,8 @@ drm_public int drmOpen(const char *name, const char *busid)
  */
 drm_public int drmOpenWithType(const char *name, const char *busid, int type)
 {
-    if (!drmAvailable() && name != NULL && drm_server_info &&
-        drm_server_info->load_module) {
+    if (name != NULL && drm_server_info &&
+        drm_server_info->load_module && !drmAvailable()) {
         /* try to load the kernel module */
         if (!drm_server_info->load_module(name)) {
             drmMsg("[drm] failed to load kernel module \"%s\"\n", name);
@@ -1481,7 +1458,7 @@ drm_public int drmDMA(int fd, drmDMAReqPtr request)
  *
  * \param fd file descriptor.
  * \param context context.
- * \param flags flags that determine the sate of the hardware when the function
+ * \param flags flags that determine the state of the hardware when the function
  * returns.
  *
  * \return always zero.
@@ -4277,5 +4254,82 @@ drm_public int drmSyncobjSignal(int fd, const uint32_t *handles,
     args.count_handles = handle_count;
 
     ret = drmIoctl(fd, DRM_IOCTL_SYNCOBJ_SIGNAL, &args);
+    return ret;
+}
+
+drm_public int drmSyncobjTimelineSignal(int fd, const uint32_t *handles,
+					uint64_t *points, uint32_t handle_count)
+{
+    struct drm_syncobj_timeline_array args;
+    int ret;
+
+    memclear(args);
+    args.handles = (uintptr_t)handles;
+    args.points = (uintptr_t)points;
+    args.count_handles = handle_count;
+
+    ret = drmIoctl(fd, DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL, &args);
+    return ret;
+}
+
+drm_public int drmSyncobjTimelineWait(int fd, uint32_t *handles, uint64_t *points,
+				      unsigned num_handles,
+				      int64_t timeout_nsec, unsigned flags,
+				      uint32_t *first_signaled)
+{
+    struct drm_syncobj_timeline_wait args;
+    int ret;
+
+    memclear(args);
+    args.handles = (uintptr_t)handles;
+    args.points = (uintptr_t)points;
+    args.timeout_nsec = timeout_nsec;
+    args.count_handles = num_handles;
+    args.flags = flags;
+
+    ret = drmIoctl(fd, DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT, &args);
+    if (ret < 0)
+        return -errno;
+
+    if (first_signaled)
+        *first_signaled = args.first_signaled;
+    return ret;
+}
+
+
+drm_public int drmSyncobjQuery(int fd, uint32_t *handles, uint64_t *points,
+			       uint32_t handle_count)
+{
+    struct drm_syncobj_timeline_array args;
+    int ret;
+
+    memclear(args);
+    args.handles = (uintptr_t)handles;
+    args.points = (uintptr_t)points;
+    args.count_handles = handle_count;
+
+    ret = drmIoctl(fd, DRM_IOCTL_SYNCOBJ_QUERY, &args);
+    if (ret)
+        return ret;
+    return 0;
+}
+
+drm_public int drmSyncobjTransfer(int fd,
+				  uint32_t dst_handle, uint64_t dst_point,
+				  uint32_t src_handle, uint64_t src_point,
+				  uint32_t flags)
+{
+    struct drm_syncobj_transfer args;
+    int ret;
+
+    memclear(args);
+    args.src_handle = src_handle;
+    args.dst_handle = dst_handle;
+    args.src_point = src_point;
+    args.dst_point = dst_point;
+    args.flags = flags;
+
+    ret = drmIoctl(fd, DRM_IOCTL_SYNCOBJ_TRANSFER, &args);
+
     return ret;
 }
