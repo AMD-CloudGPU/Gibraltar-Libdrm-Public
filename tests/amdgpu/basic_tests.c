@@ -28,6 +28,7 @@
 # include <alloca.h>
 #endif
 #include <sys/wait.h>
+#include <time.h>
 
 #include "CUnit/Basic.h"
 
@@ -52,6 +53,7 @@ static void amdgpu_bo_eviction_test(void);
 static void amdgpu_dispatch_test(void);
 static void amdgpu_draw_test(void);
 static void amdgpu_direct_gma_test(void);
+static void amdgpu_command_submission_ram_to_vram(void);
 
 static void amdgpu_command_submission_write_linear_helper(unsigned ip_type);
 static void amdgpu_command_submission_const_fill_helper(unsigned ip_type);
@@ -62,7 +64,9 @@ static void amdgpu_test_exec_cs_helper(amdgpu_context_handle context_handle,
 				       int res_cnt, amdgpu_bo_handle *resources,
 				       struct amdgpu_cs_ib_info *ib_info,
 				       struct amdgpu_cs_request *ibs_request);
- 
+static int amdgpu_prepare_sdma_copy_packet(uint32_t *pm4, uint64_t src_mc,
+						uint64_t dst_mc, uint32_t copy_size);
+
 CU_TestInfo basic_tests[] = {
 	{ "Query Info Test",  amdgpu_query_info_test },
 	{ "Userptr Test",  amdgpu_userptr_test },
@@ -71,6 +75,7 @@ CU_TestInfo basic_tests[] = {
 	{ "Command submission Test (Compute)", amdgpu_command_submission_compute },
 	{ "Command submission Test (Multi-Fence)", amdgpu_command_submission_multi_fence },
 	{ "Command submission Test (SDMA)", amdgpu_command_submission_sdma },
+	{ "Mem Copy System RAM to VRAM (SDMA)", amdgpu_command_submission_ram_to_vram },
 	{ "SW semaphore Test",  amdgpu_semaphore_test },
 	{ "Sync dependency Test",  amdgpu_sync_dependency_test },
 	{ "Dispatch Test",  amdgpu_dispatch_test },
@@ -1690,6 +1695,157 @@ static void amdgpu_command_submission_copy_linear_helper(unsigned ip_type)
 			loop1++;
 		}
 	}
+	/* clean resources */
+	free(resources);
+	free(ibs_request);
+	free(ib_info);
+	free(pm4);
+
+	/* end of test */
+	r = amdgpu_cs_ctx_free(context_handle);
+	CU_ASSERT_EQUAL(r, 0);
+}
+
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+static int amdgpu_prepare_sdma_copy_packet(uint32_t *pm4, uint64_t src_mc,
+						uint64_t dst_mc, uint32_t copy_size)
+{
+	int i = 0;
+
+	if (family_id == AMDGPU_FAMILY_SI) {
+		pm4[i++] = SDMA_PACKET_SI(SDMA_OPCODE_COPY_SI,
+						0, 0, 0,
+						copy_size);
+		pm4[i++] = 0xffffffff & dst_mc;
+		pm4[i++] = 0xffffffff & src_mc;
+		pm4[i++] = (0xffffffff00000000 & dst_mc) >> 32;
+		pm4[i++] = (0xffffffff00000000 & src_mc) >> 32;
+	} else {
+		pm4[i++] = SDMA_PACKET(SDMA_OPCODE_COPY,
+						SDMA_COPY_SUB_OPCODE_LINEAR,
+						0);
+		if (family_id >= AMDGPU_FAMILY_AI)
+			pm4[i++] = copy_size - 1;
+		else
+			pm4[i++] = copy_size;
+		pm4[i++] = 0;
+		pm4[i++] = 0xffffffff & src_mc;
+		pm4[i++] = (0xffffffff00000000 & src_mc) >> 32;
+		pm4[i++] = 0xffffffff & dst_mc;
+		pm4[i++] = (0xffffffff00000000 & dst_mc) >> 32;
+	}
+
+	return i;
+}
+
+static void amdgpu_command_submission_ram_to_vram()
+{
+	const int sdma_write_length = 1024*1024*512;
+	unsigned int remaining_size = 0;
+
+	/* Packets for 512MB should fit here since each 4MB needs 28 bytes. */
+	const int pm4_dw = 1024;
+	amdgpu_context_handle context_handle;
+	amdgpu_bo_handle bo1, bo2;
+	amdgpu_bo_handle *resources;
+	uint32_t sz;
+	uint64_t src_addr, dst_addr;
+	uint32_t *pm4;
+	struct amdgpu_cs_ib_info *ib_info;
+	struct amdgpu_cs_request *ibs_request;
+	uint64_t bo1_mc, bo2_mc;
+	volatile unsigned char *bo1_cpu, *bo2_cpu = 0;
+	int i, r;
+	amdgpu_va_handle bo1_va_handle, bo2_va_handle;
+	struct drm_amdgpu_info_hw_ip hw_ip_info;
+	struct timespec submit_time, comp_time;
+	unsigned long int usec;
+
+	CU_ASSERT_EQUAL(family_id, AMDGPU_FAMILY_AI);
+	if (family_id != AMDGPU_FAMILY_AI)
+		return;
+
+	pm4 = calloc(pm4_dw, sizeof(*pm4));
+	CU_ASSERT_NOT_EQUAL(pm4, NULL);
+
+	ib_info = calloc(1, sizeof(*ib_info));
+	CU_ASSERT_NOT_EQUAL(ib_info, NULL);
+
+	ibs_request = calloc(1, sizeof(*ibs_request));
+	CU_ASSERT_NOT_EQUAL(ibs_request, NULL);
+
+	r = amdgpu_query_hw_ip_info(device_handle, AMDGPU_HW_IP_DMA, 0, &hw_ip_info);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_cs_ctx_create(device_handle, &context_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	/* prepare resource */
+	resources = calloc(2, sizeof(amdgpu_bo_handle));
+	CU_ASSERT_NOT_EQUAL(resources, NULL);
+
+	CU_ASSERT_NOT_EQUAL(hw_ip_info.available_rings, 0);
+
+	/* allocate bo1 for sDMA use */
+	r = amdgpu_bo_alloc_and_map(device_handle,
+					sdma_write_length, 4096,
+					AMDGPU_GEM_DOMAIN_GTT,
+					0, &bo1,
+					(void**)&bo1_cpu, &bo1_mc,
+					&bo1_va_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	/* allocate bo2 for sDMA use */
+	r = amdgpu_bo_alloc_and_map(device_handle,
+					sdma_write_length, 4096,
+					AMDGPU_GEM_DOMAIN_VRAM,
+					0, &bo2,
+					(void**)&bo2_cpu, &bo2_mc,
+					&bo2_va_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	resources[0] = bo1;
+	resources[1] = bo2;
+
+	i = 0;
+	remaining_size = sdma_write_length;
+	src_addr = bo1_mc;
+	dst_addr = bo2_mc;
+	while (remaining_size != 0) {
+		/* the SDMA_OPCODE_COPY packet size field has only 22 bits */
+		sz = MIN(sdma_write_length, (1 << 22));
+		i += amdgpu_prepare_sdma_copy_packet(&pm4[i], src_addr, dst_addr, sz);
+		src_addr += sz;
+		dst_addr += sz;
+		remaining_size -= sz;
+	}
+
+	r = clock_gettime(CLOCK_MONOTONIC, &submit_time);
+	CU_ASSERT_EQUAL(r, 0);
+
+	amdgpu_test_exec_cs_helper(context_handle,
+					AMDGPU_HW_IP_DMA, 0,
+					i, pm4,
+					2, resources,
+					ib_info, ibs_request);
+	r = clock_gettime(CLOCK_MONOTONIC, &comp_time);
+	CU_ASSERT_EQUAL(r, 0);
+
+	usec = (comp_time.tv_sec - submit_time.tv_sec)*1000*1000;
+	if (comp_time.tv_nsec < submit_time.tv_nsec)
+		usec -= (submit_time.tv_nsec - comp_time.tv_nsec)/1000;
+	else
+		usec += (comp_time.tv_nsec - submit_time.tv_nsec)/1000;
+
+	printf("transfer speed: %.2fMiB/s\n",
+				((((sdma_write_length) / (usec * 1.0f)) / 1024 / 1024)*1000*1000));
+	r = amdgpu_bo_unmap_and_free(bo1, bo1_va_handle, bo1_mc,
+						sdma_write_length);
+	CU_ASSERT_EQUAL(r, 0);
+	r = amdgpu_bo_unmap_and_free(bo2, bo2_va_handle, bo2_mc,
+						sdma_write_length);
+	CU_ASSERT_EQUAL(r, 0);
+
 	/* clean resources */
 	free(resources);
 	free(ibs_request);
