@@ -54,6 +54,7 @@ static void amdgpu_dispatch_test(void);
 static void amdgpu_draw_test(void);
 static void amdgpu_direct_gma_test(void);
 static void amdgpu_command_submission_ram_to_vram(void);
+static void amdgpu_command_submission_vram_to_ram(void);
 
 static void amdgpu_command_submission_write_linear_helper(unsigned ip_type);
 static void amdgpu_command_submission_const_fill_helper(unsigned ip_type);
@@ -66,6 +67,7 @@ static void amdgpu_test_exec_cs_helper(amdgpu_context_handle context_handle,
 				       struct amdgpu_cs_request *ibs_request);
 static int amdgpu_prepare_sdma_copy_packet(uint32_t *pm4, uint64_t src_mc,
 						uint64_t dst_mc, uint32_t copy_size);
+static void amdgpu_command_sdma_copy_helper(unsigned src_heap, unsigned dst_heap);
 
 CU_TestInfo basic_tests[] = {
 	{ "Query Info Test",  amdgpu_query_info_test },
@@ -76,6 +78,7 @@ CU_TestInfo basic_tests[] = {
 	{ "Command submission Test (Multi-Fence)", amdgpu_command_submission_multi_fence },
 	{ "Command submission Test (SDMA)", amdgpu_command_submission_sdma },
 	{ "Mem Copy System RAM to VRAM (SDMA)", amdgpu_command_submission_ram_to_vram },
+	{ "Mem Copy VRAM to System RAM (SDMA)", amdgpu_command_submission_vram_to_ram },
 	{ "SW semaphore Test",  amdgpu_semaphore_test },
 	{ "Sync dependency Test",  amdgpu_sync_dependency_test },
 	{ "Dispatch Test",  amdgpu_dispatch_test },
@@ -1738,7 +1741,19 @@ static int amdgpu_prepare_sdma_copy_packet(uint32_t *pm4, uint64_t src_mc,
 	return i;
 }
 
-static void amdgpu_command_submission_ram_to_vram()
+static void amdgpu_command_submission_ram_to_vram(void)
+{
+	amdgpu_command_sdma_copy_helper(AMDGPU_GEM_DOMAIN_GTT,
+					AMDGPU_GEM_DOMAIN_VRAM);
+}
+
+static void amdgpu_command_submission_vram_to_ram(void)
+{
+	amdgpu_command_sdma_copy_helper(AMDGPU_GEM_DOMAIN_VRAM,
+					AMDGPU_GEM_DOMAIN_GTT);
+}
+
+static void amdgpu_command_sdma_copy_helper(unsigned src_heap, unsigned dst_heap)
 {
 	const int sdma_write_length = 1024*1024*512;
 	unsigned int remaining_size = 0;
@@ -1789,7 +1804,7 @@ static void amdgpu_command_submission_ram_to_vram()
 	/* allocate bo1 for sDMA use */
 	r = amdgpu_bo_alloc_and_map(device_handle,
 					sdma_write_length, 4096,
-					AMDGPU_GEM_DOMAIN_GTT,
+					src_heap,
 					0, &bo1,
 					(void**)&bo1_cpu, &bo1_mc,
 					&bo1_va_handle);
@@ -1798,7 +1813,7 @@ static void amdgpu_command_submission_ram_to_vram()
 	/* allocate bo2 for sDMA use */
 	r = amdgpu_bo_alloc_and_map(device_handle,
 					sdma_write_length, 4096,
-					AMDGPU_GEM_DOMAIN_VRAM,
+					dst_heap,
 					0, &bo2,
 					(void**)&bo2_cpu, &bo2_mc,
 					&bo2_va_handle);
