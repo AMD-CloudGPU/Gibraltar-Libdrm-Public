@@ -36,6 +36,8 @@
 #include "amdgpu_drm.h"
 #include "util_math.h"
 
+#include "amdgpu_waves.h"
+
 static  amdgpu_device_handle device_handle;
 static  uint32_t  major_version;
 static  uint32_t  minor_version;
@@ -51,6 +53,7 @@ static void amdgpu_semaphore_test(void);
 static void amdgpu_sync_dependency_test(void);
 static void amdgpu_bo_eviction_test(void);
 static void amdgpu_dispatch_test(void);
+static void amdgpu_wavefront_read_test(void);
 static void amdgpu_draw_test(void);
 static void amdgpu_direct_gma_test(void);
 static void amdgpu_command_submission_ram_to_vram(void);
@@ -84,6 +87,7 @@ CU_TestInfo basic_tests[] = {
 	{ "Dispatch Test",  amdgpu_dispatch_test },
 	{ "Draw Test",  amdgpu_draw_test },
 	{ "Direct GMA", amdgpu_direct_gma_test },
+	{ "Wavefront read Test",  amdgpu_wavefront_read_test },
 	CU_TEST_INFO_NULL,
 };
 #define BUFFER_SIZE (8 * 1024)
@@ -299,6 +303,23 @@ static  uint32_t shader_bin[] = {
 	SWAP_32(0x02810281), SWAP_32(0x02ff08bf), SWAP_32(0x7f969800), SWAP_32(0xfcff84bf),
 	SWAP_32(0xff0083be), SWAP_32(0x00f00000), SWAP_32(0xc10082be), SWAP_32(0xaa02007e),
 	SWAP_32(0x000070e0), SWAP_32(0x00000080), SWAP_32(0x000081bf)
+};
+
+
+/* Shader code in GCN ISA
+
+	.text
+		s_mov_b32 s6, 0x0
+	checkagain:
+		s_mov_b32 s4, 0xFFFFFF
+		s_add_u32 s6, s6, 1
+		s_cmp_eq_u32 s6, s4
+		s_cbranch_scc0 checkagain
+		s_endpgm
+*/
+static uint32_t longloopshader_bin[] = {
+	0xBE860080, 0xBE8400FF, 0x00FFFFFF, 0x80068106,
+	0xBF060406, 0xBF84FFFB, 0xBF810000,
 };
 
 #define CODE_OFFSET 512
@@ -2662,6 +2683,132 @@ static void amdgpu_memcpy_dispatch_test(amdgpu_device_handle device_handle,
 	r = amdgpu_cs_ctx_free(context_handle);
 	CU_ASSERT_EQUAL(r, 0);
 }
+
+static void amdgpu_wave_read_test(amdgpu_device_handle device_handle,
+					 uint32_t ip_type,
+					 uint32_t ring)
+{
+	amdgpu_context_handle context_handle;
+	amdgpu_bo_handle bo_shader, bo_cmd, resources[2];
+	void *ptr_shader;
+	uint32_t *ptr_cmd;
+	uint64_t mc_address_shader, mc_address_cmd;
+	amdgpu_va_handle va_shader, va_cmd;
+	int i, r;
+	int bo_shader_size = 4096;
+	int bo_cmd_size = 4096;
+	struct amdgpu_cs_request ibs_request = {0};
+	struct amdgpu_cs_ib_info ib_info= {0};
+	amdgpu_bo_list_handle bo_list;
+	struct amdgpu_cs_fence fence_status = {0};
+	uint32_t expired;
+	struct amdgpu_waves_handle waves_handle;
+
+	r = amdgpu_waves_create(&waves_handle);
+	CU_ASSERT_EQUAL(r, 0);
+	if (r)
+		return;
+
+	r = amdgpu_cs_ctx_create(device_handle, &context_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_bo_alloc_and_map(device_handle, bo_cmd_size, 4096,
+					AMDGPU_GEM_DOMAIN_GTT, 0,
+					&bo_cmd, (void **)&ptr_cmd,
+					&mc_address_cmd, &va_cmd);
+	CU_ASSERT_EQUAL(r, 0);
+	memset(ptr_cmd, 0, bo_cmd_size);
+
+	r = amdgpu_bo_alloc_and_map(device_handle, bo_shader_size, 4096,
+					AMDGPU_GEM_DOMAIN_VRAM, 0,
+					&bo_shader, &ptr_shader,
+					&mc_address_shader, &va_shader);
+	CU_ASSERT_EQUAL(r, 0);
+
+	/* copy shader into shader buffer */
+	memcpy(ptr_shader, longloopshader_bin,
+					sizeof(longloopshader_bin));
+
+	i = 0;
+	i += amdgpu_dispatch_init(ptr_cmd + i, ip_type);
+	i += amdgpu_dispatch_write_cumask(ptr_cmd + i);
+	i += amdgpu_dispatch_write2hw(ptr_cmd + i, mc_address_shader);
+
+	/* Start 8 threads */
+	ptr_cmd[i++] = PACKET3_COMPUTE(PACKET3_DISPATCH_DIRECT, 3);
+	ptr_cmd[i++] = 8;
+	ptr_cmd[i++] = 1;
+	ptr_cmd[i++] = 1;
+	ptr_cmd[i++] = 1;
+
+	while (i & 7)
+		ptr_cmd[i++] = 0xffff1000; /* type3 nop packet */
+
+	resources[0] = bo_shader;
+	resources[1] = bo_cmd;
+	r = amdgpu_bo_list_create(device_handle, 2, resources, NULL, &bo_list);
+	CU_ASSERT_EQUAL(r, 0);
+
+	ib_info.ib_mc_address = mc_address_cmd;
+	ib_info.size = i;
+	ibs_request.ip_type = ip_type;
+	ibs_request.ring = ring;
+	ibs_request.resources = bo_list;
+	ibs_request.number_of_ibs = 1;
+	ibs_request.ibs = &ib_info;
+	ibs_request.fence_info.handle = NULL;
+
+	/* submit CS */
+	r = amdgpu_cs_submit(context_handle, 0, &ibs_request, 1);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_bo_list_destroy(bo_list);
+	CU_ASSERT_EQUAL(r, 0);
+
+	fence_status.ip_type = ip_type;
+	fence_status.ip_instance = 0;
+	fence_status.ring = ring;
+	fence_status.context = context_handle;
+	fence_status.fence = ibs_request.seq_no;
+
+	printf("\n");
+	r = amdgpu_waves_print(&waves_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	/* wait for IB accomplished */
+	r = amdgpu_cs_query_fence_status(&fence_status,
+					 AMDGPU_TIMEOUT_INFINITE,
+					 0, &expired);
+	if (r) {
+		fprintf(stderr, "W: Error waiting for execution to finish.\n");
+	}
+
+	r = amdgpu_bo_unmap_and_free(bo_shader, va_shader, mc_address_shader, bo_shader_size);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_bo_unmap_and_free(bo_cmd, va_cmd, mc_address_cmd, bo_cmd_size);
+	CU_ASSERT_EQUAL(r, 0);
+
+	r = amdgpu_cs_ctx_free(context_handle);
+	CU_ASSERT_EQUAL(r, 0);
+
+	amdgpu_waves_destroy(&waves_handle);
+}
+
+static void amdgpu_wavefront_read_test(void)
+{
+	int r;
+	struct drm_amdgpu_info_hw_ip info;
+	uint32_t ring_id;
+
+	r = amdgpu_query_hw_ip_info(device_handle, AMDGPU_HW_IP_GFX, 0, &info);
+	CU_ASSERT_EQUAL(r, 0);
+
+	for (ring_id = 0; (1 << ring_id) & info.available_rings; ring_id++) {
+		amdgpu_wave_read_test(device_handle, AMDGPU_HW_IP_GFX, ring_id);
+	}
+}
+
 static void amdgpu_dispatch_test(void)
 {
 	int r;
