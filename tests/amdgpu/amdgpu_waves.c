@@ -28,6 +28,24 @@
 
 #define AMDGPU_WAVE_STATUS_VALID_MASK (1 << 16)
 
+#define AMDGPU_WAVE_HW_ID_WAVE_ID_SHIFT 0
+#define AMDGPU_WAVE_HW_ID_SIMD_ID_SHIFT 4
+#define AMDGPU_WAVE_HW_ID_PIPE_ID_SHIFT 6
+#define AMDGPU_WAVE_HW_ID_CU_ID_SHIFT 8
+#define AMDGPU_WAVE_HW_ID_SH_ID_SHIFT 12
+#define AMDGPU_WAVE_HW_ID_SE_ID_SHIFT 13
+#define AMDGPU_WAVE_HW_ID_WAVE_ID_MASK 0xF
+#define AMDGPU_WAVE_HW_ID_SIMD_ID_MASK 0x3
+#define AMDGPU_WAVE_HW_ID_PIPE_ID_MASK 0x3
+#define AMDGPU_WAVE_HW_ID_CU_ID_MASK 0xF
+#define AMDGPU_WAVE_HW_ID_SH_ID_MASK 0x1
+#define AMDGPU_WAVE_HW_ID_SE_ID_MASK 0x3
+
+#define AMDGPU_WAVE_GPR_ALLOC_VGPR_SIZE_SHIFT 8
+#define AMDGPU_WAVE_GPR_ALLOC_SGPR_SIZE_SHIFT 24
+#define AMDGPU_WAVE_GPR_ALLOC_VGPR_SIZE_MASK 0x3F
+#define AMDGPU_WAVE_GPR_ALLOC_SGPR_SIZE_MASK 0xF
+
 #define AMDGPU_FAMILY_AI_DEV_ID_MASK 0x686
 #define AMDGPU_FAMILY_MATCH(x, y) (((x) >> 4) == (y))
 
@@ -36,6 +54,20 @@
 #define AMDGPU_MMIO_CU_OR_QUEUE_SHIFT 44
 #define AMDGPU_MMIO_USE_RING 61 /* ME_PIPE=1 */
 #define AMDGPU_MMIO_USE_BANK 62 /* SE_SH_CU=1 */
+
+#define AMDGPU_GPR_BANK_SEL_SHIFT 60 /* VGPR=0, SGPR=1 */
+#define AMDGPU_GPR_THREAD_SEL_SHIFT 52
+#define AMDGPU_GPR_SIMD_SEL_SHIFT 44
+#define AMDGPU_GPR_WAVE_ID_SEL_SHIFT 36
+#define AMDGPU_GPR_CU_SEL_SHIFT 28
+#define AMDGPU_GPR_SH_SEL_SHIFT 20
+#define AMDGPU_GPR_SE_SEL_SHIFT 12
+
+static inline uint32_t amdgpu_read_bits(uint32_t value, int shift,
+					uint32_t mask)
+{
+	return ((value >> shift) & mask);
+}
 
 static int amdgpu_open_debugfs(const char *fmt, uint32_t instance)
 {
@@ -225,6 +257,108 @@ int amdgpu_waves_create(struct amdgpu_waves_handle *w_handle)
 	return 0;
 }
 
+static int amdgpu_print_vgprs(struct amdgpu_waves_handle *w_handle,
+			      uint32_t se_id, uint32_t sh_id, uint32_t cu_id,
+			      uint32_t simd_id, uint32_t wave_id,
+			      uint32_t thread, uint32_t vgpr_count,
+			      uint64_t exec)
+{
+	int ret;
+	uint32_t i;
+	uint32_t j;
+	ssize_t sz;
+	uint32_t buffer[256 * 16] = { 0 };
+	off_t addr_msbs;
+
+	addr_msbs = ((uint64_t)se_id << AMDGPU_GPR_SE_SEL_SHIFT) |
+		    ((uint64_t)sh_id << AMDGPU_GPR_SH_SEL_SHIFT) |
+		    ((uint64_t)cu_id << AMDGPU_GPR_CU_SEL_SHIFT) |
+		    ((uint64_t)wave_id << AMDGPU_GPR_WAVE_ID_SEL_SHIFT) |
+		    ((uint64_t)simd_id << AMDGPU_GPR_SIMD_SEL_SHIFT) |
+		    ((uint64_t)thread << AMDGPU_GPR_THREAD_SEL_SHIFT) |
+		    ((uint64_t)0 << AMDGPU_GPR_BANK_SEL_SHIFT);
+
+	addr_msbs = lseek(w_handle->fd.gpr, addr_msbs, SEEK_SET);
+	if (addr_msbs < 0)
+		return -1;
+
+	sz = read(w_handle->fd.gpr, &buffer, sizeof(uint32_t) * vgpr_count);
+	if (sz < 0)
+		return -1;
+
+	printf("Thread[%02x]: %s\n", thread,
+	       (exec & (1 << thread)) ? "Executing" : "Not Executing");
+	for (i = 0; i < vgpr_count;) {
+		if (i == 0) {
+			printf("         ");
+			for (j = 0; j < 16 && (i + j) < vgpr_count; ++j) {
+				printf(" %08x", j);
+			}
+			printf("\n");
+		}
+		printf("VGPR %3x:", i);
+		for (j = 0; j < 16 && (i + j) < vgpr_count; ++j) {
+			printf(" %08x", buffer[i + j]);
+		}
+
+		i += j;
+		printf("\n");
+	}
+
+	printf("\n");
+
+	return 0;
+}
+
+static int amdgpu_print_sgprs(struct amdgpu_waves_handle *w_handle,
+			      uint32_t se_id, uint32_t sh_id, uint32_t cu_id,
+			      uint32_t simd_id, uint32_t wave_id,
+			      uint32_t sgpr_count)
+{
+	int ret;
+	uint32_t i;
+	uint32_t j;
+	ssize_t sz;
+	uint32_t buffer[256 * 4] = { 0 };
+	off_t addr_msbs;
+
+	addr_msbs = ((uint64_t)se_id << AMDGPU_GPR_SE_SEL_SHIFT) |
+		    ((uint64_t)sh_id << AMDGPU_GPR_SH_SEL_SHIFT) |
+		    ((uint64_t)cu_id << AMDGPU_GPR_CU_SEL_SHIFT) |
+		    ((uint64_t)wave_id << AMDGPU_GPR_WAVE_ID_SEL_SHIFT) |
+		    ((uint64_t)simd_id << AMDGPU_GPR_SIMD_SEL_SHIFT) |
+		    ((uint64_t)1 << AMDGPU_GPR_BANK_SEL_SHIFT);
+
+	addr_msbs = lseek(w_handle->fd.gpr, addr_msbs, SEEK_SET);
+	if (addr_msbs < 0)
+		return -1;
+
+	sz = read(w_handle->fd.gpr, &buffer, sizeof(uint32_t) * sgpr_count);
+	if (sz < 0)
+		return -1;
+
+	for (i = 0; i < sgpr_count;) {
+		if (i == 0) {
+			printf("\n         ");
+			for (j = 0; j < 16 && (i + j) < sgpr_count; ++j) {
+				printf(" %08x", j);
+			}
+			printf("\n");
+		}
+		printf("SGPR %3x:", i);
+		for (j = 0; j < 16 && (i + j) < sgpr_count; ++j) {
+			printf(" %08x", buffer[i + j]);
+		}
+
+		i += j;
+		printf("\n");
+	}
+
+	printf("\n");
+
+	return 0;
+}
+
 static int amdgpu_print_wavedata(struct amdgpu_waves_handle *w_handle,
 				 uint32_t se, uint32_t sh, uint32_t cu,
 				 uint32_t simd, uint32_t wave)
@@ -234,7 +368,8 @@ static int amdgpu_print_wavedata(struct amdgpu_waves_handle *w_handle,
 	ssize_t sz;
 	uint32_t buffer[32] = { 0 };
 	off_t addr_msbs;
-	uint32_t value = 0;
+	uint32_t value = 0, se_id, sh_id, cu_id, wave_id, simd_id, sgpr_size,
+		 vgpr_size;
 
 	addr_msbs = ((uint64_t)se << 7) | ((uint64_t)sh << 15) |
 		    ((uint64_t)cu << 23) | ((uint64_t)wave << 31) |
@@ -269,6 +404,52 @@ static int amdgpu_print_wavedata(struct amdgpu_waves_handle *w_handle,
 	       buffer[AMDGPU_WAVE_LDS_ALLOC_INDEX],
 	       buffer[AMDGPU_WAVE_TRAPSTS_INDEX],
 	       buffer[AMDGPU_WAVE_IB_STS_INDEX]);
+
+	se_id = amdgpu_read_bits(buffer[AMDGPU_WAVE_HW_ID_INDEX],
+				 AMDGPU_WAVE_HW_ID_SE_ID_SHIFT,
+				 AMDGPU_WAVE_HW_ID_SE_ID_MASK);
+
+	sh_id = amdgpu_read_bits(buffer[AMDGPU_WAVE_HW_ID_INDEX],
+				 AMDGPU_WAVE_HW_ID_SH_ID_SHIFT,
+				 AMDGPU_WAVE_HW_ID_SH_ID_MASK);
+
+	cu_id = amdgpu_read_bits(buffer[AMDGPU_WAVE_HW_ID_INDEX],
+				 AMDGPU_WAVE_HW_ID_CU_ID_SHIFT,
+				 AMDGPU_WAVE_HW_ID_CU_ID_MASK);
+
+	wave_id = amdgpu_read_bits(buffer[AMDGPU_WAVE_HW_ID_INDEX],
+				   AMDGPU_WAVE_HW_ID_WAVE_ID_SHIFT,
+				   AMDGPU_WAVE_HW_ID_WAVE_ID_MASK);
+
+	simd_id = amdgpu_read_bits(buffer[AMDGPU_WAVE_HW_ID_INDEX],
+				   AMDGPU_WAVE_HW_ID_SIMD_ID_SHIFT,
+				   AMDGPU_WAVE_HW_ID_SIMD_ID_MASK);
+
+	sgpr_size = amdgpu_read_bits(buffer[AMDGPU_WAVE_GPR_ALLOC_INDEX],
+				     AMDGPU_WAVE_GPR_ALLOC_SGPR_SIZE_SHIFT,
+				     AMDGPU_WAVE_GPR_ALLOC_SGPR_SIZE_MASK);
+
+	vgpr_size = amdgpu_read_bits(buffer[AMDGPU_WAVE_GPR_ALLOC_INDEX],
+				     AMDGPU_WAVE_GPR_ALLOC_VGPR_SIZE_SHIFT,
+				     AMDGPU_WAVE_GPR_ALLOC_VGPR_SIZE_MASK);
+
+	/* AI family SGPR allocation are in blocks of 16 */
+	sgpr_size = (sgpr_size + 1) << 4;
+
+	/* AI family VGPR allocation are in blocks of 16 */
+	vgpr_size = (vgpr_size + 1) << 2;
+
+	amdgpu_print_sgprs(w_handle, se_id, sh_id, cu_id, simd_id, wave_id,
+			   sgpr_size);
+
+	/* AI family has 64 threads */
+	for (i = 0; i < 64; ++i) {
+		amdgpu_print_vgprs(
+			w_handle, se_id, sh_id, cu_id, simd_id, wave_id, i,
+			vgpr_size,
+			(((uint64_t)buffer[AMDGPU_WAVE_EXEC_HI_INDEX] << 32) |
+			 buffer[AMDGPU_WAVE_EXEC_LOW_INDEX]));
+	}
 
 	return 0;
 }
